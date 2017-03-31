@@ -7,61 +7,63 @@ It depends on distutils
 
 from __future__ import print_function
 
+from autogen.pm_types import pm_modules
+from setuptools import setup
+import distutils
 from distutils.cmd import Command
-from distutils.core import setup
-from distutils.extension import Extension
-from Cython.Build import cythonize
+from distutils.command.build_ext import build_ext as _build_ext
+from setuptools.extension import Extension
 
 import os
 
+
+# temporary fix to
+#   https://github.com/videlec/pypolymake/issues/17
+cfg_vars = distutils.sysconfig.get_config_vars()
+cfg_vars['CFLAGS'] = cfg_vars['CFLAGS'].replace("-Wstrict-prototypes", "")
+
+
 extensions = [
-    Extension("cygmp.utils",
-        ["src/cygmp/utils.pyx"],
-        depends = ["src/cygmp/all.pxd", "src/cygmp/mpq.pxd",
-            "src/cygmp/random.pxd", "src/cygmp/utils.pyx",
-            "src/cygmp/misc.pxd", "src/cygmp/mpn.pxd",
-            "src/cygmp/mpz.pxd", "src/cygmp/python_extra.h",
-            "src/cygmp/types.pxd", "src/cygmp/utils.pxd"],
-        libraries = ["gmp"],
-        language = 'c'),
+    Extension("polymake.cygmp.utils", ["polymake/cygmp/utils.pyx"],
+        depends = ["polymake/cygmp/*.pxd", "polymake/cygmp/*h"]),
 
-    Extension("polymake.number",
-        ["src/polymake/number.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
+    Extension("polymake.perl_object", ["polymake/perl_object.pyx"],
+        depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
 
-    Extension("polymake.vector",
-        ["src/polymake/vector.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
+    Extension("polymake.main", ["polymake/main.pyx"],
+        depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
 
-    Extension("polymake.matrix",
-        ["src/polymake/matrix.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
+    Extension("polymake.handlers", ["polymake/handlers.pyx"],
+        depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
 
-    Extension("polymake.perl_object",
-        ["src/polymake/perl_object.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
+#    Extension("polymake.function_dispatcher", ["polymake/function_dispatcher.pyx"],
+#        depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
 
-    Extension("polymake.properties",
-        ["src/polymake/properties.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
-
-    Extension("polymake.polytope",
-        ["src/polymake/polytope.pyx"],
-        depends = ["src/polymake/defs.pxd"],
-        libraries = ["gmp", "polymake"],
-        language = 'c++'),
-
+    Extension("polymake.big_object", ["polymake/big_object.pyx"],
+        depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
 ]
+
+for mod in pm_modules():
+    extensions.append(
+        Extension("polymake." + mod, ["polymake/" + mod + ".pyx"],
+            depends = ["polymake/*.pxd", "polymake/cygmp/*"]),
+    )
+
+try:
+    import sage
+    import site
+    extensions.append(
+        Extension("polymake.sage_conversion", ["polymake/sage_conversion.pyx"],
+        depends = ["polymake/defs.pxd"],
+        include_dirs = site.getsitepackages())
+    )
+    #TODO: if include_dirs not set we end up with the following error
+    #
+    #    gcc -fno-strict-aliasing -g -O2 -DNDEBUG -g -fwrapv -O3 -Wall -Wno-unused -fPIC -I/opt/sage/local/include/python2.7 -c src/polymake/sage_conversion.cpp -o build/temp.linux-x86_64-2.7/src/polymake/sage_conversion.o
+    #    src/polymake/sage_conversion.cpp:480:35: erreur fatale : sage/libs/ntl/ntlwrap.h : Aucun fichier ou dossier de ce type
+    #     #include "sage/libs/ntl/ntlwrap.h"
+except ImportError:
+    pass
 
 class TestCommand(Command):
     user_options = []
@@ -90,6 +92,38 @@ class TestCommand(Command):
                 if call(["python", f]):
                     raise RuntimeError("some tests failed in {}".format(f))
 
+# Adapted from Cython's new_build_ext
+class build_ext(_build_ext):
+    def finalize_options(self):
+        # Generate files
+        from autogen import rebuild
+        rebuild()
+
+
+        import sys
+
+        # Check dependencies
+        try:
+            from Cython.Build.Dependencies import cythonize
+        except ImportError as E:
+            sys.stderr.write("Error: {0}\n".format(E))
+            sys.stderr.write("The installation of ppl requires Cython\n")
+            sys.exit(1)
+
+# cysignals not yet integrated
+#        try:
+#            # We need the header files for cysignals at compile-time
+#            import cysignals
+#        except ImportError as E:
+#            sys.stderr.write("Error: {0}\n".format(E))
+#            sys.stderr.write("The installation of ppl requires cysignals\n")
+#            sys.exit(1)
+
+        self.distribution.ext_modules[:] = cythonize(
+            self.distribution.ext_modules, include_path=sys.path)
+        _build_ext.finalize_options(self)
+
+
 setup(
   name = "pypolymake",
   author ="Vincent Delecroix, Burcin Erocal",
@@ -98,11 +132,11 @@ setup(
   description = "Python wrapper for polymake",
   long_description = open("README").read(),
   license = "GNU General Public License, version 3 or later",
-  ext_modules = cythonize(extensions),
-  packages = ["polymake", "cygmp"],
-  package_dir = {"polymake": os.path.join("src", "polymake"),
-                 "cygmp": os.path.join("src", "cygmp")},
+  ext_modules = extensions,
+  packages = ["polymake", "polymake.cygmp"],
+  package_dir = {"polymake": "polymake",
+                 "polymake.cygmp": os.path.join("polymake", "cygmp")},
   package_data = {"polymake": ["*.pxd", "*.pyx", "*.h"],
-                  "cygmp": ["*.pxd", "*.pyx", "*.h"]},
-  cmdclass = {'test': TestCommand}
+                  "polymake.cygmp": ["*.pxd", "*.pyx", "*.h"]},
+  cmdclass = {'build_ext': build_ext, 'test': TestCommand}
 )

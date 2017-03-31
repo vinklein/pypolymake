@@ -1,15 +1,17 @@
+# distutils: language = c++
+# distutils: libraries = polymake gmpxx gmp
 ###############################################################################
-#       Copyright (C) 2016      Vincent Delecroix <vincent.delecroix@labri.fr>
+#       Copyright (C) 2016 Vincent Delecroix <vincent.delecroix@labri.fr> 
+#
 #  Distributed under the terms of the GNU General Public License (GPL),
 #  version 3 or any later version.  The full text of the GPL is available at:
 #                  http://www.gnu.org/licenses/
 ###############################################################################
 
-from defs cimport pm_Integer, pm_Rational
+from libcpp cimport bool
+from libcpp.string cimport string
 
-cdef class Integer:
-    cdef pm_Integer pm_obj
+include "auto_power_set.pxi"
 
-cdef class Rational:
-    cdef pm_Rational pm_obj
+
 

@@ -4,7 +4,7 @@ pypolymake
 What is it?
 -----------
 
-The Python module pypolymake provides wrappers for `polymake
+The Python module pypolymake provides wrappers for `polymake version 3.1
 <https://polymake.org/doku.php>`_.
 
 The language has been kept as close as possible as the original. The
@@ -34,26 +34,23 @@ to break.
 Installation and source code
 ----------------------------
 
-If you are using `SageMath <http://www.sagemath.org>`_ then just run the following
-two commands
+In principle, pypolymake could be used with Python2, Python3 and within Sage.
+
+### Installation against the beta version of polymake in Python2 or Python3
+
+Just run the following command to install pypolymake
+
+    $ pip install git+https://github.com/videlec/pypolymake [--user] [--upgrade]
+
+### Installation inside Sage
+
+If you are using `SageMath <http://www.sagemath.org>`_ version at least 8.beta0 then
+run the following two commands to install polymake and pypolymake
 
     $ sage -i polymake
-    $ sage -pip install git+https://github.com/videlec/pypolymake
+    $ sage -pip install git+https://github.com/videlec/pypolymake [--user] [--upgrade]
 
-In principle, pypolymake could be used with Python2, Python3 and within Sage. The
-prerequisites are
-
-- polymake in version 3.0 or later together with its header files
-- `Cython <http://cython.org/>`_
-- `cysignals <https://pypi.python.org/pypi/cysignals/>`_
-
-To install the package then use::
-
-    $ pip install git+https://github.com/videlec/pypolymake [--user] [--pre]
-
-(the `--pre` argument is needed on recent pip versions to allow installation
-of beta releases, the `--user` argument make the installation in your home
-directory and can be omitted if you have write access to your system). 
+### Notes
 
 If polymake headers or libraries are installed in a non standard location you
 may need to set the environment variables CFLAGS, CXXFLAGS, LDFLAGS. For example,
@@ -63,7 +60,9 @@ on OS X, you need to update LDFLAGS as::
     $ python setup.py install --user
 
 You might also need to set LD_LIBRARY_PATH before starting Python if the shared
-library of polymake (libpolymake.so) is not in a standard directory.
+library of polymake (libpolymake.so) is not in a standard directory. For example
+
+    $ LD_LIBRARY_PATH=/my/path/to/lib/ ipython
 
 License
 -------

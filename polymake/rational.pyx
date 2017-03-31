@@ -1,3 +1,5 @@
+# distutils: language = c++
+# distutils: libraries = polymake gmpxx gmp
 ###############################################################################
 #       Copyright (C) 2016 Vincent Delecroix <vincent.delecroix@labri.fr> 
 #
@@ -7,16 +9,23 @@
 ###############################################################################
 
 from cpython.object cimport Py_LT, Py_LE, Py_EQ, Py_NE, Py_GT, Py_GE
-from operator import add as op_add,\
-                     mul as op_mul,\
-                     sub as op_sub,\
-                     div as op_div,\
-                     pow as op_pow
 
-from cygmp.types cimport mpz_t, mpq_t, mpq_srcptr
-from cygmp.mpz cimport mpz_init, mpz_clear, mpz_set_si
-from cygmp.mpq cimport mpq_init, mpq_clear, mpq_numref, mpq_denref, mpq_canonicalize
-from cygmp.utils cimport mpz_set_pylong, mpz_get_bytes, mpq_get_bytes
+from .cygmp.types cimport mpz_t, mpq_t, mpz_srcptr, mpq_srcptr
+from .cygmp.mpz cimport mpz_init, mpz_clear, mpz_set_si
+from .cygmp.mpq cimport mpq_init, mpq_clear, mpq_numref, mpq_denref, mpq_canonicalize
+from .cygmp.utils cimport mpz_set_pylong, mpz_get_bytes, mpq_get_bytes
+
+from libcpp.string cimport string
+
+from .defs cimport pm_Integer
+from .integer cimport Integer
+
+cdef extern from "<sstream>" namespace "std":
+    cdef cppclass ostringstream:
+        string str()
+
+cdef extern from "wrap.h" namespace "polymake":
+    void pm_Rational_repr "WRAP_wrap_OUT" (ostringstream, pm_Rational)
 
 def get_num_den(elt):
     num = None
@@ -39,114 +48,7 @@ def get_num_den(elt):
 
     return (num, den)
 
-
-cdef class Integer:
-    r"""Polymake integer
-    """
-    def __init__(self, data):
-        cdef mpz_t z
-
-        if isinstance(data, int):
-            mpz_init(z)
-            mpz_set_si(z, data)
-        elif isinstance(data, long):
-            mpz_init(z)
-            mpz_set_pylong(z, data)
-        else:
-            raise ValueError("Polymake integer can only be initialized from Python int and long")
-
-        self.pm_obj.set_mpz_t(z)
-        mpz_clear(z)
-
-    def _integer_(self, R=None):
-        r"""Conversion to Sage integer
-
-        Overflow currently causes a segmentation fault!"""
-        return R(int(self))
-
-    def __nonzero__(self):
-        return self.pm_obj.non_zero()
-
-    def __repr__(self):
-        return mpz_get_bytes(self.pm_obj.get_rep())
-
-    def __int__(self):
-        return self.pm_obj.to_long()
-
-    def __float__(self):
-        return self.pm_obj.to_double()
-
-    def __richcmp__(self, other, op):
-        cdef int c
-
-        if type(self) is type(other):
-            c = (<Integer>self).pm_obj.compare((<Integer>other).pm_obj)
-        elif isinstance(self, int):
-            c = -(<Integer>other).pm_obj.compare(<long>self)
-        elif isinstance(other, int):
-            c = (<Integer>self).pm_obj.compare(<long>other)
-        else:
-           return NotImplemented
-
-        if c < 0:
-            return op in (Py_LE, Py_LT, Py_NE)
-        elif c == 0:
-            return op in (Py_LE, Py_EQ, Py_GE)
-        else:
-            return op in (Py_GE, Py_GT, Py_NE)
-
-    def __add__(self, other):
-        cdef Integer ans = Integer.__new__(Integer)
-        if type(self) is type(other):
-            ans.pm_obj = (<Integer>self).pm_obj + (<Integer>other).pm_obj
-        elif isinstance(self, int):
-            ans.pm_obj = (<Integer>other).pm_obj + <long>self
-        elif isinstance(other, int):
-            ans.pm_obj = (<Integer>self).pm_obj + <long>other
-        else:
-            return NotImplemented
-        return ans
-
-    def __sub__(self, other):
-        cdef Integer ans = Integer.__new__(Integer)
-        if type(self) is type(other):
-            ans.pm_obj = (<Integer>self).pm_obj - (<Integer>other).pm_obj
-        elif isinstance(self, int):
-            ans.pm_obj = -((<Integer>other).pm_obj - <long>self)
-        elif isinstance(other, int):
-            ans.pm_obj = (<Integer>self).pm_obj - <long>other
-        else:
-            return NotImplemented
-        return ans
-
-    def __mul__(self, other):
-        cdef Integer ans = Integer.__new__(Integer)
-        if type(self) is type(other):
-            ans.pm_obj = (<Integer>self).pm_obj * (<Integer>other).pm_obj
-        elif isinstance(self, int):
-            ans.pm_obj = (<Integer>other).pm_obj * <long>self
-        elif isinstance(other, int):
-            ans.pm_obj = (<Integer>self).pm_obj * <long>other
-        else:
-            return NotImplemented
-        return ans
-
-    def __div__(self, other):
-        if not other:
-            raise ZeroDivisionError("polymake.number.Integer division by zero")
-
-        cdef Integer ans = Integer.__new__(Integer)
-        if type(self) is type(other):
-            ans.pm_obj = (<Integer>self).pm_obj / (<Integer>other).pm_obj
-        elif isinstance(self, int):
-            ans.pm_obj = (<Integer>Integer(self)).pm_obj / (<Integer>other).pm_obj
-        elif isinstance(other, int):
-            ans.pm_obj = (<Integer>self).pm_obj / <long>other
-        else:
-            return NotImplemented
-        return ans
-
-cdef class Rational:
+cdef class Rational(object):
     r"""Polymake rational
     """
     def __init__(self, num, den=None):
@@ -170,15 +72,42 @@ cdef class Rational:
             mpz_set_pylong(mpq_denref(z), den)
 
         mpq_canonicalize(z)
-        self.pm_obj.set_mpq_t(z)
+        self.pm_obj.set_mpq_srcptr(<mpq_srcptr>z)
         mpq_clear(z)
 
-    def _rational_(self):
-        r"""Conversion to Sage rational"""
-        return self.numerator()._integer_() / self.denominator()._integer_()
+    def sage(self):
+        r"""Converts rational to Sage
+
+        >>> import polymake
+        >>> import polymake
+        >>> a = polymake.Rational(23, 55)
+        >>> a
+        23/55
+        >>> a.sage()
+        23/55
+        >>> type(a.sage())
+        <type 'sage.rings.rational.Rational'>
+
+        >>> a = polymake.Rational(2**100, 3**100)
+        >>> a.sage()
+        1267650600228229401496703205376/515377520732011331036461129765621272702107522001
+        """
+        from .sage_conversion import Rational_to_sage
+        return Rational_to_sage(self)
+
+    _rational_ = sage
+
+    def python(self):
+        r"""Converts to a python fraction
+
+        >>> import polymake
+        >>> c = polymake.Rational(12, 5)
+        """
+        from fractions import Fraction
+        return Fraction(self.numerator().python(), self.denominator().python())
 
     def __nonzero__(self):
-        return self.pm_obj.non_zero()
+        return not self.pm_obj.is_zero()
 
     def __richcmp__(self, other, op):
         cdef int c
@@ -204,18 +133,20 @@ cdef class Rational:
             return op in (Py_GE, Py_GT, Py_NE)
 
     def __repr__(self):
-        return mpq_get_bytes(self.pm_obj.get_rep())
+        cdef ostringstream out
+        pm_Rational_repr(out, self.pm_obj)
+        return (<bytes>out.str()).decode('ascii')
 
     def numerator(self):
         cdef Integer ans = Integer.__new__(Integer)
         cdef mpq_srcptr z = self.pm_obj.get_rep()
-        ans.pm_obj.set_mpz_t(mpq_numref(z))
+        ans.pm_obj.set_mpz_srcptr(mpq_numref(z))
         return ans
 
     def denominator(self):
         cdef Integer ans = Integer.__new__(Integer)
         cdef mpq_srcptr z = self.pm_obj.get_rep()
-        ans.pm_obj.set_mpz_t(mpq_denref(z))
+        ans.pm_obj.set_mpz_srcptr(mpq_denref(z))
         return ans
 
     def __add__(self, other):
@@ -266,7 +197,8 @@ cdef class Rational:
             return NotImplemented
         return ans
 
-    def __div__(self, other):
+
+    def __truediv__(self, other):
         if not other:
             raise ZeroDivisionError("polymake.number.Rational division by zero")
 
@@ -285,3 +217,7 @@ cdef class Rational:
                     pass
             return NotImplemented
         return ans
+
+    def __div__(self, other):
+        return self.__truediv__(other)
+
